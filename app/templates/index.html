@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preço Real — quanto é imposto?</title>
+  <meta name="description" content="Calcule quanto do preço de um produto no Brasil é imposto (ICMS, IPI, PIS, Cofins e ISS), com as fontes oficiais do governo.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f5132'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='%23ffd34d' font-family='Arial' font-weight='700'>R$</text></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css').path }}">
+</head>
+<body>
+  <header class="topo">
+    <div class="topo__conteudo">
+      <p class="topo__marca">Preço Real</p>
+      <h1>Quanto do que você paga é imposto?</h1>
+      <p class="topo__sub">Informe o preço e o produto. A calculadora separa o ICMS, o IPI, o PIS, a Cofins e o ISS embutidos — com o link da lei de cada um.</p>
+    </div>
+  </header>
+
+  <main class="pagina">
+    <section class="calculadora" aria-label="Calculadora">
+      <form id="form" class="cartao formulario" autocomplete="off" novalidate>
+        <div class="campo">
+          <label for="preco" id="preco-rotulo">Preço pago</label>
+          <div class="entrada-moeda">
+            <span aria-hidden="true">R$</span>
+            <input id="preco" name="preco" inputmode="decimal" placeholder="0,00" value="100,00" aria-describedby="preco-ajuda">
+          </div>
+          <small id="preco-ajuda" class="ajuda">O valor final, como aparece na etiqueta ou na nota.</small>
+        </div>
+
+        <div class="campo">
+          <label for="categoria">Produto ou serviço</label>
+          <select id="categoria" name="categoria">
+            {% for grupo, categorias in grupos.items() %}
+            <optgroup label="{{ grupo }}">
+              {% for c in categorias %}
+              <option value="{{ c.id }}" data-tipo="{{ c.tipo }}" data-ncm="{{ c.ncm }}" data-ipi="{{ c.ipi }}"{% if c.id in unidades %} data-unidade="{{ unidades[c.id] }}"{% endif %}{% if c.id == 'smartphone' %} selected{% endif %}>{{ c.nome }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+          <small id="categoria-info" class="ajuda"></small>
+        </div>
+
+        <div class="campo" id="campo-uf">
+          <label for="uf">Estado</label>
+          <select id="uf" name="uf">
+            {% for e in estados %}
+            <option value="{{ e.uf }}"{% if e.uf == 'SP' %} selected{% endif %}>{{ e.nome }} ({{ e.uf }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="campo" id="campo-zfm">
+          <label class="caixa">
+            <input type="checkbox" id="zona_franca" name="zona_franca">
+            <span>Fabricado na Zona Franca de Manaus <small>(IPI isento)</small></span>
+          </label>
+        </div>
+
+        <div class="campo" id="campo-regime">
+          <label for="regime">Regime de PIS/Cofins do vendedor</label>
+          <select id="regime" name="regime">
+            {% for chave, r in regimes.items() %}
+            <option value="{{ chave }}">{{ r.nome }} — {{ (r.pis + r.cofins)|pct }}</option>
+            {% endfor %}
+          </select>
+          <small class="ajuda">PIS + Cofins. Grandes lojas costumam estar no lucro real; prestadores de serviço, no presumido. O Simples Nacional não é coberto.</small>
+        </div>
+
+        <details class="ajustes" id="ajustes">
+          <summary>Ajustar alíquotas</summary>
+          <p class="ajuda">Preenchidas com os valores da lei. Altere se o seu produto tiver alíquota diferente.</p>
+          <div class="grade-ajustes">
+            <label data-tipo="mercadoria">ICMS (%)<input type="number" step="0.01" min="0" max="100" data-ajuste="icms"></label>
+            <label data-tipo="mercadoria">FCP (%)<input type="number" step="0.01" min="0" max="100" data-ajuste="fcp"></label>
+            <label data-tipo="mercadoria">IPI (%)<input type="number" step="0.01" min="0" max="400" data-ajuste="ipi"></label>
+            <label data-tipo="servico">ISS (%)<input type="number" step="0.01" min="0" max="100" data-ajuste="iss"></label>
+            <label>PIS (%)<input type="number" step="0.01" min="0" max="100" data-ajuste="pis"></label>
+            <label>Cofins (%)<input type="number" step="0.01" min="0" max="100" data-ajuste="cofins"></label>
+            <label data-tipo="mercadoria" class="grade-ajustes__largo">Margem da loja sobre o preço de fábrica (%)
+              <input type="number" step="1" min="0" max="1000" id="margem_varejo" value="0">
+              <small class="ajuda">Afeta só o IPI, que é cobrado na fábrica. 0 = estimativa máxima.</small>
+            </label>
+          </div>
+          <button type="button" class="botao-link" id="restaurar">Restaurar valores da lei</button>
+        </details>
+      </form>
+
+      <div class="cartao resultado" id="resultado" aria-live="polite">
+        <div class="resultado__vazio" id="vazio">Digite um preço para ver o cálculo.</div>
+        <div id="conteudo" hidden>
+          <div class="destaque">
+            <div>
+              <p class="destaque__rotulo">Impostos embutidos</p>
+              <p class="destaque__valor" id="total"></p>
+            </div>
+            <div class="destaque__pct">
+              <p class="destaque__numero" id="carga"></p>
+              <p class="destaque__rotulo">do preço é imposto</p>
+            </div>
+          </div>
+
+          <div class="barra" id="barra" role="img"></div>
+          <ul class="legenda" id="legenda"></ul>
+
+          <p class="sem-impostos" id="sem-impostos"></p>
+
+          <div class="tabela-rolagem">
+            <table class="tabela">
+              <thead>
+                <tr><th>Tributo</th><th class="num">Alíquota</th><th class="num">Valor</th><th class="num">% do preço</th></tr>
+              </thead>
+              <tbody id="linhas"></tbody>
+              <tfoot>
+                <tr><th>Total</th><td></td><td class="num" id="total-tabela"></td><td class="num" id="carga-tabela"></td></tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <ul class="avisos" id="avisos"></ul>
+          <p class="aviso-reforma"><strong>Reforma tributária:</strong> em 2026 a nota fiscal também mostra CBS (0,9%) e IBS (0,1%) em caráter de teste. Esse valor é compensado com o PIS/Cofins — por isso não aumenta o total acima.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cartao texto" id="metodologia">
+      <h2>Como calculamos</h2>
+      <div class="colunas">
+        <div>
+          <h3>Imposto “por dentro” e “por fora”</h3>
+          <p>No Brasil, o ICMS é calculado <strong>por dentro</strong>: ele faz parte do próprio preço (Lei Complementar 87/1996, art. 13, § 1º, I). Num produto de R$ 100 com ICMS de 18%, R$ 18 são imposto e R$ 82 são o resto. Só que R$ 18 representam <strong>21,95%</strong> sobre esses R$ 82.</p>
+          <p>Por isso mostramos dois números: quanto do preço é imposto e quanto os impostos <strong>acrescentam</strong> ao valor do produto sem eles.</p>
+        </div>
+        <div>
+          <h3>Fórmulas</h3>
+          <ul class="formulas">
+            <li><strong>ICMS</strong> = preço × alíquota modal do estado (+ FCP, quando houver).</li>
+            <li><strong>PIS e Cofins</strong> = (preço − ICMS) × alíquota. O ICMS sai da base por decisão do STF (Tema 69).</li>
+            <li><strong>IPI</strong> = alíquota da TIPI × preço de fábrica. Sem a margem da loja, estimamos o preço de fábrica como o preço final sem o IPI (estimativa máxima).</li>
+            <li><strong>ISS</strong> (serviços) = preço × alíquota do município; PIS/Cofins sobre o preço cheio.</li>
+            <li><strong>Combustíveis</strong>: ICMS, PIS/Cofins e Cide são valores fixos por litro, definidos pelo CONFAZ e por decreto. Os federais incidem só sobre a parte fóssil da mistura (gasolina A, diesel A). Usamos os valores em vigor na data do cálculo.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>O que entra e o que fica de fora</h3>
+          <p>Seguimos a lista da Lei 12.741/2012 (art. 1º, § 5º): ICMS, ISS, IPI, IOF, PIS, Cofins e Cide. O IOF incide só sobre produtos financeiros e não entra aqui; a Cide aparece na gasolina.</p>
+          <p>Ficam de fora o imposto de renda e a CSLL das empresas e os encargos sobre a folha de pagamento, que também pesam no preço. Também não modelamos Simples Nacional, substituição tributária, benefícios estaduais e importação.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="cartao texto" id="reforma">
+      <h2>O que muda com a reforma tributária</h2>
+      <ol class="linha-tempo">
+        <li><span class="linha-tempo__ano">2026</span><span>Ano-teste: CBS de 0,9% e IBS de 0,1% aparecem na nota, compensáveis com PIS/Cofins. A carga não muda.</span></li>
+        <li><span class="linha-tempo__ano">2027</span><span>A CBS substitui PIS e Cofins. O IPI é zerado, exceto para produtos com industrialização incentivada na Zona Franca de Manaus. Começa o Imposto Seletivo.</span></li>
+        <li><span class="linha-tempo__ano">2029–2032</span><span>ICMS e ISS caem aos poucos (90%, 80%, 70% e 60% das alíquotas) enquanto o IBS sobe.</span></li>
+        <li><span class="linha-tempo__ano">2033</span><span>ICMS e ISS são extintos. Ficam o IBS (estados e municípios), a CBS (União) e o Imposto Seletivo.</span></li>
+      </ol>
+      <p class="ajuda">Fontes: Emenda Constitucional 132/2023 (ADCT, arts. 125 a 129) e Lei Complementar 214/2025.</p>
+    </section>
+
+    <section class="cartao texto" id="fontes">
+      <h2>Fontes oficiais</h2>
+      <p>Leis e tabelas publicadas pelo governo federal (Planalto, Receita Federal, CONFAZ/Ministério da Fazenda) e pelo STF. Alíquotas conferidas em {{ data_referencia }}. As alíquotas de ICMS são definidas pela lei de cada estado.</p>
+      <div class="fontes">
+        {% for titulo, itens in fontes %}
+        <div class="fontes__grupo">
+          <h3>{{ titulo }}</h3>
+          <ul>
+            {% for chave, f in itens %}
+            <li id="fonte-{{ chave }}">
+              <a href="{{ f.url }}" target="_blank" rel="noopener noreferrer">{{ f.titulo }}</a>
+              <span class="fontes__orgao">{{ f.orgao }}</span>
+              <p>{{ f.resumo }}</p>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </main>
+
+  <footer class="rodape">
+    <p>Ferramenta educativa. Os valores são estimativas feitas a partir das alíquotas legais; a carga exata depende do regime da empresa, de benefícios fiscais e de toda a cadeia de produção. O valor aproximado oficial dos tributos aparece na sua nota fiscal (Lei 12.741/2012).</p>
+    <p><a href="/docs">API documentada</a> · <a href="https://github.com/kauaDev22/preco-real" target="_blank" rel="noopener noreferrer">Código-fonte no GitHub</a></p>
+  </footer>
+
+  <script>
+    window.FONTES = {{ fontes_js | tojson }};
+  </script>
+  <script src="{{ url_for('static', path='app.js').path }}" defer></script>
+</body>
+</html>

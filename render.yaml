@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: preco-real
+    runtime: python
+    plan: free
+    region: virginia
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
+    healthCheckPath: /saude
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # O Render termina o HTTPS num proxy; sem confiar nos cabeçalhos dele o app se vê em http.
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
